@@ -37,11 +37,10 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         }
     }
 
-    // println!("struct fields: {:?}", struct_fields);
+    // println!("struct fields: {:?}", struct fields);
     let command_builder_builder_it = struct_fields.iter().map(|f| {
 
         let has_field_builder_attr = has_field_builder_attr(f);
-        let is_an_option = is_field_an_option(f);
 
         if let Some(id) = &f.ident {
             let id_ = format_ident!("_{}", id);
@@ -51,21 +50,9 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                     #id_: vec![],
                 }
             } else {
-
-                if is_an_option {
-
-                    let inner_ty = get_option_inner_ty(&f.ty).unwrap();
-
-                    quote! {
-                        #id_: std::option::Option::None::<#inner_ty>,
-                    }
-                } else {
-                    let ty = &f.ty;
-                    quote! {
-                        #id_: std::option::Option::None::<#ty>,
-                    }
+                quote! {
+                    #id_: None,
                 }
-
             }
         } else { quote! {} }
     });
@@ -78,7 +65,6 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         if let Some(id) = &f.ident {
             let id_ = format_ident!("_{}", id);
             let ty = &f.ty;
-            // println!("ty: {:?}", ty);
             let is_an_option = is_field_an_option(f);
             let has_field_builder_attr = has_field_builder_attr(f);
 
@@ -88,7 +74,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 }
             } else {
                 quote! {
-                    #id_: std::option::Option<#ty>,
+                    #id_: Option<#ty>,
                 }
             }
         } else { quote! {} }
@@ -109,7 +95,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             if let Some(option_inner_ty) = is_an_option {
                quote! {
                     fn #id(&mut self, #id: #option_inner_ty) -> &mut Self {
-                        self.#id_ = std::option::Option::Some(#id);
+                        self.#id_ = Some(#id);
                         self
                     }
                }
@@ -131,7 +117,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 } else {
                     quote! {
                         fn #id(&mut self, #id: #ty) -> &mut Self {
-                            self.#id_ = std::option::Option::Some(#id);
+                            self.#id_ = Some(#id);
                             self
                         }
                     }
@@ -198,12 +184,12 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
             #command_builder_setters
 
-            pub fn build(&mut self) -> std::result::Result<#name, std::boxed::Box<dyn Error>> {
+            pub fn build(&mut self) -> Result<#name, Box<dyn Error>> {
                 let st = #name {
                     #command_builder_build_code
                 };
 
-                std::result::Result::Ok(st)
+                Ok(st)
             }
         }
 
@@ -216,7 +202,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 fn get_fields_with_ident(data: &Data) -> Vec<Field> {
 
-    // get all named fields (as syn::Field) from struct
+    // get all fields (as syn::Field) from struct
 
     match *data {
         Data::Struct(ref data) => {
@@ -393,6 +379,50 @@ fn builder_attribute_ident(f: &Field) -> syn::Result<Ident> {
     return Err(Error::new(f.span(), CUSTOM_ATTR_BUILDER_NOT_FOUND));
 }
 
+/*
+fn has_field_builder_attr(f: &Field) -> syn::Result<Ident> {
+
+    let builder_attributes: Vec<&Attribute> = f.attrs.iter().filter(|a| {
+        if let Meta::List(ml) = &a.meta {
+            let path_segment_ = ml.path.segments.first();
+            if let Some(path_segment) = path_segment_ {
+                if path_segment.ident.to_string() == "builder" {
+                    return true;
+                }
+            }
+        }
+        false
+    }).collect();
+
+    if !builder_attributes.is_empty() {
+        let builder_attribute = builder_attributes[0];
+
+        if let Meta::List(ml) = &builder_attribute.meta {
+
+            // Need to parse the token stream from the meta list
+            let each_args: BuilderMeta = ml.parse_args()?;
+            // println!("each_args: {:?}", each_args);
+
+            let lit_str = each_args.value.to_string();
+            // https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html
+            // remove "" from literal (first and last character)
+            let lit_str_stripped = lit_str
+                .chars()
+                .skip(1)
+                .take(lit_str.len() - 2)
+                .collect::<String>();
+
+            let id = Ident::new(lit_str_stripped.as_str(), Span::call_site());
+
+            return Ok(id)
+        }
+
+    }
+
+    return Err(Error::new(f.span(), CUSTOM_ATTR_BUILDER_NOT_FOUND));
+}
+*/
+
 fn get_vec_inner_ty(ty: &Type) -> Option<Type> {
 
     // From Vec<String> -> String
@@ -415,43 +445,6 @@ fn get_vec_inner_ty(ty: &Type) -> Option<Type> {
             let path_segment_ = type_path.path.segments.first();
             if let Some(path_segment) = path_segment_ {
                 if path_segment.ident.to_string() == "Vec" {
-                    if let PathArguments::AngleBracketed(vec_generic_args) = &path_segment.arguments {
-                        let vec_arg = &vec_generic_args.args[0];
-                        if let GenericArgument::Type(vec_arg_type) = vec_arg {
-                            return Some(vec_arg_type.clone());
-                        }
-                    }
-                }
-            }
-        },
-        _ => unimplemented!()
-    }
-
-    None
-}
-
-fn get_option_inner_ty(ty: &Type) -> Option<Type> {
-
-    // From Option<String> -> String
-    // Parse:
-    // TypePath { qself: None,
-    //  path: Path { leading_colon: None,
-    //      segments: [
-    //          PathSegment { ident: Ident { ident: "Vec", span: #0 bytes(831..834) },
-    //              arguments:
-    //              PathArguments::AngleBracketed { colon2_token: None, lt_token: Lt,
-    //                  args: [
-    //                      GenericArgument::Type(Type::Path { qself: None, path:
-    //                          Path { leading_colon: None, segments:
-    //                              [PathSegment { ident:
-    //                                  Ident { ident: "String", span: #0 bytes(835..841) },
-    //                                  arguments: PathArguments::None }] } })], gt_token: Gt } }] } }
-
-    match ty {
-        Type::Path(type_path) => {
-            let path_segment_ = type_path.path.segments.first();
-            if let Some(path_segment) = path_segment_ {
-                if path_segment.ident.to_string() == "Option" {
                     if let PathArguments::AngleBracketed(vec_generic_args) = &path_segment.arguments {
                         let vec_arg = &vec_generic_args.args[0];
                         if let GenericArgument::Type(vec_arg_type) = vec_arg {
