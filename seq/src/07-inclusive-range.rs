@@ -1,11 +1,14 @@
 // #![feature(proc_macro_diagnostic)]
 
-use proc_macro::{TokenStream};
-use std::ops::{RangeInclusive};
+use proc_macro::{TokenStream, TokenTree};
+use std::arch::x86_64::_mm256_blend_epi16;
+use std::ops::{Range, RangeBounds, RangeInclusive};
 use proc_macro2::Delimiter;
-use syn::{parse_macro_input, Ident, Token, LitInt, braced};
+// use proc_macro2::TokenTree::Literal;
+use syn::{parse_macro_input, Ident, Token, LitInt, Error, braced};
 use syn::parse::{Parse, ParseStream, Result};
-use quote::{quote};
+use quote::{quote, ToTokens};
+// use syn::token::Token;
 
 #[proc_macro]
 pub fn seq(input: TokenStream) -> TokenStream {
@@ -254,7 +257,7 @@ fn detect_partial_repeat(ts: proc_macro2::TokenStream) -> bool {
                     if let Some(proc_macro2::TokenTree::Group(group_)) = next_ {
                         if group_.delimiter() == Delimiter::Parenthesis {
                             // Found a group with delimiter ()
-                            let _group = it.next().unwrap(); // already peek and checked
+                            let group = it.next().unwrap(); // already peek and checked
                             let after_group = it.next();
                             if let Some(proc_macro2::TokenTree::Punct(ref after_group_punct)) = after_group {
                                 if after_group_punct.as_char() == '*' {
