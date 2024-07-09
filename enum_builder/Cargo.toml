@@ -1,0 +1,23 @@
+[package]
+name = "enum_builder"
+version = "0.0.0"
+autotests = false
+edition = "2021"
+publish = false
+
+[lib]
+proc-macro = true
+
+[[test]]
+name = "tests"
+path = "tests/progress.rs"
+
+[dev-dependencies]
+trybuild = { version = "1.0.49", features = ["diff"] }
+
+[dependencies]
+syn = { version = "2", features = ["full", "fold", "extra-traits", "visit"] }
+quote = "1"
+proc-macro2 = { version = "1", features = ["nightly"] }
+itertools = "0.13"
+
